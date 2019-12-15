@@ -155,7 +155,7 @@ def renewTrackingNLObj(frame,frame_no,now_nlobjlist,past_nlobjlist,rect_list):
             now_nlobjlist.remove(nlobj)
             past_nlobjlist.append(nlobj)
 
-#frame_noとprintから対象のNLOを特定し、nameとともにobj生成
+#frame_noとprintから対象のNLOを特定し、nameとともにobj生成,past_nlobjはpast_opjにnowはnowに分類される
 def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist):
     print("Naming")
     print("Enter new Name:")
@@ -180,14 +180,36 @@ def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist):
 
 
 #初回の学習
-def createCNN(cnn,optimizer,now_objlist):
-    x_data = np.array((0,28*28), np.float32)#入力値
-    for obj in now_objlist:
-        np.append(x_data, np.array([adjustRectImage(obj.getImagelist())]))#怪しい
-
+def createCNN(cnn,optimizer,all_objlist):
+    batch_size = 500#バッチサイズ
+    n_epoch = 2#エポック数
+    x_data = np.zeros((1,28*28), np.float32)#入力値
+    for obj in all_objlist:
+        x_data = np.append(x_data, adjustRectImage(obj.getImagelist()), 0)#怪しい
+    x_data = np.delete(x_data,0,0)
+    x_data = x_data.reshape((len(x_data), 1, 28, 28))
+    t_data = np.zeros((1,1), np.int32)#目標値
+    for obj in all_objlist:
+        t_data = np.append(t_data, all_objlist.getId())
+    t_data = np.delete(t_data,0,0)
+    perm = np.random.permutation(len(x_data))
+    for epoch in range(n_epoch):
+        for i in range(0, len(x_data), batch_size):
+            x = Variable(x_data[perm[i:i+batch_size]])
+            t = Variable(t_data[perm[i:i+batch_size]])
+            y = model.forward(x)
+            model.zerograds()
+            #loss = F.softmax_cross_entropy(y, t)
+            #acc = F.accuracy(y, t)
+            loss.backward()
+            optimizer.update()
 
 def updateCNN(cnn,optimizer,train_img,id):
-    cnn
+    batch_size = 500
+    n_epoch= 2
+    x_data = train_img
+    t_data = id
+
 
 
 
@@ -251,8 +273,9 @@ if __name__ == "__main__":
             cnn = CNN(len(all_objlist))
             optimizer = chainer.optimizers.Adam()
             optimizer.setup(model)
-            createCNN(cnn,optimizer)
+            createCNN(cnn,optimizer,all_objlist)
             adding_mode = "OFF"
+
 
         if k == 27: # ESCキーで終了
             break
