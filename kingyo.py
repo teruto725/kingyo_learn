@@ -208,7 +208,7 @@ def updateCNN(cnn,optimizer,train_img,id):
     batch_size = 500
     n_epoch= 2
     x_data = train_img
-    t_data = id
+    t_data =
 
 
 
