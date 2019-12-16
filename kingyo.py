@@ -8,6 +8,7 @@ import chainer.links as L
 import chainer
 from pathlib import Path
 from chainer import Chain, optimizers, Variable, serializers
+import copy
 
 class NameLessObject():
     def __init__(self):
@@ -35,6 +36,13 @@ class NameLessObject():
             rect = self.rectlist[self.frame_nolist.index(frame_no)]
             if rect[0]<point[0]<rect[0]+rect[2] and rect[1]<point[1]<rect[1]+rect[3]:
                 return True
+        return False
+
+    def checkLatestFrame(self,irect):#rectを受け取ってそれに合致しているかどうか
+        point = [irect[0]+(int(irect[2]/2)),irect[1]+(int(irect[3]/2))]
+        rect = self.rectlist[-1]
+        if rect[0]<point[0]<rect[0]+rect[2] and rect[1]<point[1]<rect[1]+rect[3]:
+            return True
         return False
 
 class Object():
@@ -137,13 +145,14 @@ def drawFrame(now_objlist,now_nlobjlist,frame):
     return frame
 
 #新しくできた領域に対しtrackerを設定し、新たなNlobjを生成
-def appearNLObj(frame,frame_no,now_objlist,rect_list):
-    tracker = cv2.TrackerKCF_create()
-    tracker.init(frame, tuple(rect_list.pop(0)))
-    nlo = NameLessObject()
-    nlo.addTracker(tracker)
-    nlo.tracking(frame,frame_no)
-    now_nlobjlist.append(nlo)
+def appearNLObj(frame,frame_no,now_nlobjlist,rect_list):
+    for rect in rect_list:
+        tracker = cv2.TrackerKCF_create()
+        tracker.init(frame, tuple(rect))
+        nlo = NameLessObject()
+        nlo.addTracker(tracker)
+        nlo.tracking(frame,frame_no)
+        now_nlobjlist.append(nlo)
 
 #画面上すべてのnloに対してtrackingを更新し金魚消失していないか調べる
 def renewTrackingNLObj(frame,frame_no,now_nlobjlist,past_nlobjlist,rect_list):
@@ -178,7 +187,8 @@ def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist):
     else:
         print("座標がずれています。もう一度指定しなおしてください")
 
-
+def appearObj(now_objlist):
+    print
 #初回の学習
 def createCNN(cnn,optimizer,all_objlist):
     batch_size = 500#バッチサイズ
@@ -207,10 +217,20 @@ def createCNN(cnn,optimizer,all_objlist):
 def updateCNN(cnn,optimizer,train_img,id):
     batch_size = 500
     n_epoch= 2
-    x_data = train_img
-    t_data =
-
-
+    x_data = np.array(train_img)
+    x_data = x_data.reshape((len(train_img), 1, 28, 28))
+    t_data = numpy.full(len(train_img),id, np.int32)
+    perm = np.random.permutation(len(x_data))
+    for epoch in range(n_epoch):
+        for i in range(0, len(x_data), batch_size):
+            x = Variable(x_data[perm[i:i+batch_size]])
+            t = Variable(t_data[perm[i:i+batch_size]])
+            y = model.forward(x)
+            model.zerograds()
+            #loss = F.softmax_cross_entropy(y, t)
+            #acc = F.accuracy(y, t)
+            loss.backward()
+            optimizer.update()
 
 
 
@@ -230,13 +250,23 @@ if __name__ == "__main__":
     while True:
         ret, frame = cap.read()#frame読み込み
         rect_list = getRectList(frame)#画像内の矩形領域リスト
+
+        ######NLObj################
         if adding_mode == "ON":
             renewTrackingNLObj(frame,frame_no,now_nlobjlist,past_nlobjlist,rect_list)#tracker更新＋金魚消失判定
+            rect_list_copy = copy.deepcopy(rect_list)
+            for nlobj in now_nlobjlist:
+                for rect in rect_list_copy:#rect_listからtrackerで追跡済みの物を削除
+                    if nlobj.checkLatestFrame(rect) == True:
+                        rect_list.remove(rect)
+                    else:
+                        print("TrackerERROR")
             if len(now_nlobjlist) < len(rect_list):#認識されていない金魚がいるとき
                 print("金魚出現")
-                appearNLObj(frame,frame_no,now_objlist,rect_list)#NLObj生成
+                appearNLObj(frame,frame_no,now_nlobjlist,rect_list)#NLObj生成
 
-        if adding_mode == "OFF":
+        ######Obj#################
+        elif adding_mode == "OFF":
             #renewTrackingObj()
             success_frag = False
             for obj in now_objlist:#すべてのtrackerを更新する
@@ -248,17 +278,12 @@ if __name__ == "__main__":
                     past_objlist.append(nlobj)
                     success_frag=True
                     updateCNN(cnn,optimizer,obj.getImageTemp(),obj.getId())
-            if success_frag:#どれかが消滅したとき
 
-
-
-            if len(now_objlist) < len(rect_list):
+            if len(now_objlist) < len(rect_list):#金魚が入ってきた
                 tracker = cv2.TrackerKCF_create()
                 tracker.init(frame, tuple(rect_list.pop(0)))#0でいいの？
-                #NNつっこむ
 
-
-
+        ####描画処理#########################
         drawFrame(now_objlist,now_nlobjlist,frame)#認識結果描画
         cv2.imshow('camera capture', frame)#表示
         k = cv2.waitKey(1) # 1msec待つ
