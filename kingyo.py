@@ -29,7 +29,8 @@ class NameLessObject():
             rect = np.array(rect,dtype=np.int32)
             self.rectlist.append(rect)
             self.imagelist.append(frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]])
-        return success
+            return True
+        return False
 
     def check(self,frame_no,point):#frame_no,point座標に自身が該当しているかどうか
         if frame_no in self.frame_nolist:
@@ -154,15 +155,12 @@ def appearNLObj(frame,frame_no,now_nlobjlist,rect_list):
         nlo.tracking(frame,frame_no)
         now_nlobjlist.append(nlo)
 
-#画面上すべてのnloに対してtrackingを更新し金魚消失していないか調べる
-def renewTrackingNLObj(frame,frame_no,now_nlobjlist,past_nlobjlist,rect_list):
-    for nlobj in now_nlobjlist:#画面内に存在しているnlobj
-        success = nlobj.tracking(frame,frame_no)#
-        if success == False:#金魚消滅してたら
-            print("金魚消失")
-            nlobj.rmTracker()
-            now_nlobjlist.remove(nlobj)
-            past_nlobjlist.append(nlobj)
+#nloが画面上から外に出た時の処理
+def disappearNLObj(nlobj,now_nlobjlist,past_nlobjlist):
+    print("金魚消失")
+    nlobj.rmTracker()
+    now_nlobjlist.remove(nlobj)
+    past_nlobjlist.append(nlobj)
 
 #frame_noとprintから対象のNLOを特定し、nameとともにobj生成,past_nlobjはpast_opjにnowはnowに分類される
 def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist):
@@ -253,17 +251,21 @@ if __name__ == "__main__":
 
         ######NLObj################
         if adding_mode == "ON":
-            renewTrackingNLObj(frame,frame_no,now_nlobjlist,past_nlobjlist,rect_list)#tracker更新＋金魚消失判定
-            rect_list_copy = copy.deepcopy(rect_list)
             for nlobj in now_nlobjlist:
-                for rect in rect_list_copy:#rect_listからtrackerで追跡済みの物を削除
-                    if nlobj.checkLatestFrame(rect) == True:
-                        rect_list.remove(rect)
-                    else:
-                        print("TrackerERROR")
-            if len(now_nlobjlist) < len(rect_list):#認識されていない金魚がいるとき
+                success = nlobj.tracking(frame,frame_no)#trackerを更新
+                if success == False:#金魚消滅してたら
+                    disappearNLObj(nlobj,now_nlobjlist,past_nlobjlist)
+                else:
+                    for rect in rect_list:#rect_listからtrackerで追跡済みの物を削除
+                        if nlobj.checkLatestFrame(rect) == True:#一致するrectがあったつまり認識可能
+                            rect_list.remove(rect)
+                            break
+                    else:#一致するrectがない⇒画面端にいるときつまり認識不可能
+                        disappearNLObj(nlobj,now_nlobjlist,past_nlobjlist)
+            if 0 < len(rect_list):#認識されていない金魚がいるとき
                 print("金魚出現")
                 appearNLObj(frame,frame_no,now_nlobjlist,rect_list)#NLObj生成
+
 
         ######Obj#################
         elif adding_mode == "OFF":
