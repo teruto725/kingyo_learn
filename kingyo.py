@@ -70,8 +70,9 @@ class Object():
         if success:
             rect = np.array(rect,dtype=np.int32)
             self.rectlist.append(rect)
-            self.imagelist_temp.append(frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]])
-        return success
+            self.imagelist.append(frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]])
+            return True
+        return False
 
     def saveImageTemp(self):
         self.imagelist.append(self.imagelist_temp)
@@ -81,6 +82,8 @@ class Object():
         return self.imagelist
     def getId(self):
         return self.id
+    def getName(self):
+        return self.name
 #CNN
 class CNN(Chain):#出力数を受け取ってcnnを作成する
     def __init__(self,output_num):
@@ -162,8 +165,14 @@ def disappearNLObj(nlobj,now_nlobjlist,past_nlobjlist):
     now_nlobjlist.remove(nlobj)
     past_nlobjlist.append(nlobj)
 
+def disapperObj(obj,now_objlist,past_objlist):
+    print(obj.getName()+"消失")
+    obj.rmTracker()
+    now_objlist.remove(obj)
+    past_objlist.append(obj)
+
 #frame_noとprintから対象のNLOを特定し、nameとともにobj生成,past_nlobjはpast_opjにnowはnowに分類される
-def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist):
+def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist,rect_list):
     print("Naming")
     print("Enter new Name:")
     name = input()
@@ -185,8 +194,7 @@ def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist):
     else:
         print("座標がずれています。もう一度指定しなおしてください")
 
-def appearObj(now_objlist):
-    print
+
 #初回の学習
 def createCNN(cnn,optimizer,all_objlist):
     batch_size = 500#バッチサイズ
@@ -238,7 +246,7 @@ if __name__ == "__main__":
     past_objlist = list()#画面外のobj
     now_nlobjlist = list()#画面内のnlobj
     past_nlobjlist = list()#画面外のnl
-    adding_mode="OFF"
+    adding_mode="ON"
     last_num = 0#前回フレームの金魚数
     frame_no = 0
 
@@ -247,7 +255,9 @@ if __name__ == "__main__":
 
     while True:
         ret, frame = cap.read()#frame読み込み
+
         rect_list = getRectList(frame)#画像内の矩形領域リスト
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)#グレースケール　（後でRGBにすること）
 
         ######NLObj################
         if adding_mode == "ON":
@@ -269,21 +279,38 @@ if __name__ == "__main__":
 
         ######Obj#################
         elif adding_mode == "OFF":
-            #renewTrackingObj()
-            success_frag = False
             for obj in now_objlist:#すべてのtrackerを更新する
                 success = obj.tracking(frame, frame_no)
                 if success == False:#消失
-                    print(name+":消滅")
-                    obj.rmTracker()
-                    now_objlist.remove(nlobj)
-                    past_objlist.append(nlobj)
-                    success_frag=True
+                    disapperObj(obj,now_objlist,past_objlist)
                     updateCNN(cnn,optimizer,obj.getImageTemp(),obj.getId())
-
-            if len(now_objlist) < len(rect_list):#金魚が入ってきた
+                else:
+                    for rect in rect_list:
+                        if nlobj.checkLatestFrame(rect) == True:#一致するrectがあったつまり認識可能
+                            rect_list.remove(rect)
+                            break
+                    else:#一致するrectがない⇒画面端にいるときつまり認識不可能
+                        disappearObj(nlobj,now_nlobjlist,past_nlobjlist)
+                        updateCNN(cnn,optimizer,obj.getImageTemp(),obj.getId())
+            if 0 < len(rect_list):#金魚が入ってきた
+                print("金魚出現")
                 tracker = cv2.TrackerKCF_create()
-                tracker.init(frame, tuple(rect_list.pop(0)))#0でいいの？
+                for rect in rect_list:
+                    tracker = cv2.TrackerKCF_create()
+                    tracker.init(frame, tuple(rect))
+                    x_img = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
+                    x_data = x_data.reshape(1,1, 28, 28)
+                    x_data = np.array(x_data, np.float32)
+                    #学習
+                    with chainer.using_config('train', False), chainer.using_config('enable_backprop', False):
+                        prolist = loaded_net(x_data)
+                    pro = np.argmax(prolist.array)#予測値
+                    for obj in past_objlist:
+                        if obj == pro:
+                            past_objlist.remove(obj)
+                            now_objlist.append(obj)
+                            obj.addTracker(tracker)
+
 
         ####描画処理#########################
         drawFrame(now_objlist,now_nlobjlist,frame)#認識結果描画
@@ -294,7 +321,7 @@ if __name__ == "__main__":
             print("adding_mode=ON")
 
         if k == ord("g"):#gキーで名前登録
-            naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist)#名前からobject生成
+            naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist,rect_list)#名前からobject生成
             all_objlist.extend(now_objlist)
             all_objlist.extend(past_objlist)
             cnn = CNN(len(all_objlist))
