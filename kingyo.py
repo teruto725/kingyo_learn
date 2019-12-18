@@ -129,8 +129,8 @@ def getRectList(frame):
 #CNNように画像を調整
 def adjustRectImage(imagelist):
     resize_imglist=list()
-    for i in range(len(imglist)):
-        resize_imglist.append(cv2.resize(imglist[i], (28,28),0,0 ,cv2.INTER_NEAREST))#28×28領域に調整
+    for i in range(len(imagelist)):
+        resize_imglist.append(cv2.resize(imagelist[i], (28,28),0,0 ,cv2.INTER_NEAREST))#28×28領域に調整
     flat_imglist=list()
     for i in range(len(resize_imglist)):
         flat_imglist.append(resize_imglist[i].flatten())#2次元配列から1次元に変換
@@ -176,14 +176,16 @@ def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist,rect_l
     print("Naming")
     print("Enter new Name:")
     name = input()
+
     #print("Enter Point:")
     #point =list(map(int,input().split()))	#point = [x,y]
     point = [rect_list[0][0]+10,rect_list[0][1]+10]#テスト用に座標を固定よってrect_listは引数に不必要
     all_nlobjlist = list()
     all_nlobjlist.extend(now_nlobjlist)
     all_nlobjlist.extend(past_nlobjlist)
+    print(len(all_nlobjlist))
     for nlobj in all_nlobjlist:
-        if nlobj.check(frame_no,point):
+        if nlobj.check(frame_no-1,point):#frame-1はよくない
             new_obj = Object(name,nlobj.imagelist)
             if nlobj in now_nlobjlist:#new_objが現在画面内か、画面外かでappedn先が変わる
                 new_obj.addTracker(nlobj.tracker)
@@ -193,7 +195,6 @@ def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist,rect_l
             break
     else:
         print("座標がずれています。もう一度指定しなおしてください")
-
 
 #初回の学習
 def createCNN(cnn,optimizer,all_objlist):
@@ -206,7 +207,7 @@ def createCNN(cnn,optimizer,all_objlist):
     x_data = x_data.reshape((len(x_data), 1, 28, 28))
     t_data = np.zeros((1,1), np.int32)#目標値
     for obj in all_objlist:
-        t_data = np.append(t_data, all_objlist.getId())
+        t_data = np.append(t_data, obj.getId())
     t_data = np.delete(t_data,0,0)
     perm = np.random.permutation(len(x_data))
     for epoch in range(n_epoch):
@@ -246,7 +247,7 @@ if __name__ == "__main__":
     past_objlist = list()#画面外のobj
     now_nlobjlist = list()#画面内のnlobj
     past_nlobjlist = list()#画面外のnl
-    adding_mode="ON"
+    adding_mode="OFF"
     last_num = 0#前回フレームの金魚数
     frame_no = 0
 
@@ -258,6 +259,27 @@ if __name__ == "__main__":
 
         rect_list = getRectList(frame)#画像内の矩形領域リスト
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)#グレースケール　（後でRGBにすること）
+
+        #####キーボード入力#######################
+        k = cv2.waitKey(1) # 1msec待つ
+        if k == 13: #enterキーで追加モード
+            adding_mode = "ON"
+            print("adding_mode=ON")
+
+        if k == ord("g"):#gキーで名前登録
+            naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist,rect_list)#名前からobject生成
+            all_objlist = list()
+            all_objlist.extend(now_objlist)
+            all_objlist.extend(past_objlist)
+            if len(all_objlist)>1:
+                cnn = CNN(len(all_objlist))
+                optimizer = chainer.optimizers.Adam()
+                optimizer.setup(cnn)
+                createCNN(cnn,optimizer,all_objlist)
+            adding_mode = "OFF"
+
+        if k == 27: # ESCキーで終了
+            break
 
         ######NLObj################
         if adding_mode == "ON":
@@ -294,11 +316,16 @@ if __name__ == "__main__":
                         updateCNN(cnn,optimizer,obj.getImageTemp(),obj.getId())
             if 0 < len(rect_list):#金魚が入ってきた
                 print("金魚出現")
-                tracker = cv2.TrackerKCF_create()
+                if len(past_objlist) == 1:
+                    tracker = cv2.TrackerKCF_create()
+                    tracker.init(frame, tuple(rect_list[0]))#いっぴくなら一匹と決めつけしているので微妙
+                    past_objlist.remove(past_objlist[0])
+                    now_objlist.append(past_objlist[0])
+                    obj.addTracker(tracker)
                 for rect in rect_list:
                     tracker = cv2.TrackerKCF_create()
                     tracker.init(frame, tuple(rect))
-                    x_img = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
+                    x_data = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
                     x_data = x_data.reshape(1,1, 28, 28)
                     x_data = np.array(x_data, np.float32)
                     #学習
@@ -315,24 +342,7 @@ if __name__ == "__main__":
         ####描画処理#########################
         drawFrame(now_objlist,now_nlobjlist,frame)#認識結果描画
         cv2.imshow('camera capture', frame)#表示
-        k = cv2.waitKey(1) # 1msec待つ
-        if k == 13: #enterキーで追加モード
-            adding_mode = "ON"
-            print("adding_mode=ON")
 
-        if k == ord("g"):#gキーで名前登録
-            naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist,rect_list)#名前からobject生成
-            all_objlist.extend(now_objlist)
-            all_objlist.extend(past_objlist)
-            cnn = CNN(len(all_objlist))
-            optimizer = chainer.optimizers.Adam()
-            optimizer.setup(model)
-            createCNN(cnn,optimizer,all_objlist)
-            adding_mode = "OFF"
-
-
-        if k == 27: # ESCキーで終了
-            break
 
         frame_no += 1
     cap.release()
