@@ -94,15 +94,33 @@
 
 
 # クラス
+クラスとそのクラスが持つ主なメンバ変数、メンバ関数について述べる。
 
 ## 1. Objectクラス
 
 ### - 概要
-
-認識を行うオブジェクト
+UnknownObjectとNamedObjectの抽象クラス
 
 ### - 属性
 
+### - ふるまい
+- tracking(frame,frame_no) : bool   
+フレーム画像とフレーム番号を受け取ってtrackerを更新、トラッキンできたかどうかを返す。抽象メソッド。
+- setTracker(tracker) : void  
+trackerをセットする
+- rmTracker() : void
+trackerを削除する
+- checkLatestFrame(rect) : bool
+矩形座標を受け取り、最新の矩形座標と一致するかどうかを返す。
+
+
+
+## 2. Objectクラス
+
+### - 概要
+UnknownObjectとNamedObjectの抽象クラス
+
+### - 属性
 - tracker : トラッカー
 
 - id : CNNの目標値となるID
@@ -151,7 +169,7 @@
 
 - tracking(frame, frame_no) :
 <!--stackedit_data:
-eyJoaXN0b3J5IjpbLTEzODI1OTg2MDYsLTY4NDgyMDU0MCwtMT
-MyNTQ4NzY1OCwtODUxNDUxMzE1LC0xODA1MjYwNTY0LDczMDk5
-ODExNl19
+eyJoaXN0b3J5IjpbLTU0ODU0MDQ0NCwtMTM4MjU5ODYwNiwtNj
+g0ODIwNTQwLC0xMzI1NDg3NjU4LC04NTE0NTEzMTUsLTE4MDUy
+NjA1NjQsNzMwOTk4MTE2XX0=
 -->
