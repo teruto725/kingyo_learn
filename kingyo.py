@@ -22,14 +22,24 @@ class NameLessObject():
     def rmTracker(self):
         self.tracker = None
 
+    def adjustRectImage(self, image):#画像をサイズ修正して返す
+        try:
+            image = cv2.resize(image, (28,28),0,0 ,cv2.INTER_NEAREST)#28×28領域に調整
+            return True, image.flatten()
+        except:
+            return False, None
+
     def tracking(self,frame,frame_no):#フレーム画像とフレーム番号を受け取ってtrackerを更新、認識できたかどうかを返す
-        self.frame_nolist.append(frame_no)
         success,rect = self.tracker.update(frame)
         if success:
             rect = np.array(rect,dtype=np.int32)
-            self.rectlist.append(rect)
-            self.imagelist.append(frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]])
-            return True
+            image = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
+            ok, ajimage = self.adjustRectImage(image)
+            if ok:#リサイズできたなら
+                self.rectlist.append(rect)
+                self.imagelist.append(ajimage)
+                self.frame_nolist.append(frame_no)
+            return True#trueはトラッキング結果なのでそのまま返す
         return False
 
     def check(self,frame_no,point):#frame_no,point座標に自身が該当しているかどうか
@@ -46,6 +56,7 @@ class NameLessObject():
             return True
         return False
 
+
 class Object():
     obj_con = 0#objのidカウント用クラス変数
     def __init__(self,name,imagelist):
@@ -54,28 +65,44 @@ class Object():
         self.imagelist = imagelist
         self.id = Object.obj_con
         Object.obj_con += 1
-        self.rectlist = list()
         self.imagelist_temp = list()
-
-
+        self.rectlist = list()
     def addTracker(self,tracker):
         self.tracker = tracker
 
-    def rmTracker(self,tracker):
+    def rmTracker(self):
         self.tracker = None
 
-    def tracking(self,frame,frame_no):#フレーム画像とフレーム番号を受け取ってtrackerを更新、認識できたかどうかを返す
-        self.frame_nolist.append(frame_no)
+    def adjustRectImage(self, image):#画像をサイズ修正して返す
+        try:
+            image = cv2.resize(image, (28,28),0,0 ,cv2.INTER_NEAREST)#28×28領域に調整
+            return True, image.flatten()
+        except:
+            return False, None
+
+    def tracking(self,frame):#フレーム画像とフレーム番号を受け取ってtrackerを更新、認識できたかどうかを返す
         success,rect = self.tracker.update(frame)
         if success:
             rect = np.array(rect,dtype=np.int32)
-            self.rectlist.append(rect)
-            self.imagelist.append(frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]])
+            image = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
+            ok,ajimage = self.adjustRectImage(image)
+            if ok:
+                self.imagelist_temp.append(ajimage)
+                self.rectlist.append(rect)
+            return True
+        return False
+
+    def checkLatestFrame(self,irect):#rectを受け取ってそれに合致しているかどうか
+        point = [irect[0]+(int(irect[2]/2)),irect[1]+(int(irect[3]/2))]
+        rect = self.rectlist[-1]
+        if rect[0]<point[0]<rect[0]+rect[2] and rect[1]<point[1]<rect[1]+rect[3]:
             return True
         return False
 
     def saveImageTemp(self):
-        self.imagelist.append(self.imagelist_temp)
+        self.imagelist.extend(self.imagelist_temp)
+        self.imagelist_temp.clear()
+
     def getImageTemp(self):
         return self.imagelist_temp
     def getImagelist(self):
@@ -84,11 +111,13 @@ class Object():
         return self.id
     def getName(self):
         return self.name
+
+
 #CNN
 class CNN(Chain):#出力数を受け取ってcnnを作成する
     def __init__(self,output_num):
         super(CNN, self).__init__(
-            conv1 = L.Convolution2D(3, 20, 5), # filter 5
+            conv1 = L.Convolution2D(1, 20, 5), # filter 5
             conv2 = L.Convolution2D(20, 50, 5), # filter 5
             l1 = L.Linear(800, 500),
             l2 = L.Linear(500, 500),
@@ -119,22 +148,14 @@ def getRectList(frame):
                     continue
                 rect = contours[i]
                 x, y, w, h = cv2.boundingRect(rect)
-                rect_list.append([x,y,w,h])
+                if w >= 28 and h >= 28:#十分に多きサイズであれば
+                    rect_list.append([x,y,w,h])
         if len(rect_list) != 0:#矩形領域を抽出できたら
             break
     else:#矩形領域を抽出できなかったら
         return []
     return rect_list
 
-#CNNように画像を調整
-def adjustRectImage(imagelist):
-    resize_imglist=list()
-    for i in range(len(imagelist)):
-        resize_imglist.append(cv2.resize(imagelist[i], (28,28),0,0 ,cv2.INTER_NEAREST))#28×28領域に調整
-    flat_imglist=list()
-    for i in range(len(resize_imglist)):
-        flat_imglist.append(resize_imglist[i].flatten())#2次元配列から1次元に変換
-    return flat_imglist
 
 #frameに認識結果を書き込みframeを返す
 def drawFrame(now_objlist,now_nlobjlist,frame):
@@ -165,7 +186,7 @@ def disappearNLObj(nlobj,now_nlobjlist,past_nlobjlist):
     now_nlobjlist.remove(nlobj)
     past_nlobjlist.append(nlobj)
 
-def disapperObj(obj,now_objlist,past_objlist):
+def disappearObj(obj,now_objlist,past_objlist):
     print(obj.getName()+"消失")
     obj.rmTracker()
     now_objlist.remove(obj)
@@ -198,47 +219,59 @@ def naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist,rect_l
 
 #初回の学習
 def createCNN(cnn,optimizer,all_objlist):
-    batch_size = 500#バッチサイズ
+    batch_size = 1#バッチサイズ
     n_epoch = 2#エポック数
+
     x_data = np.zeros((1,28*28), np.float32)#入力値
     for obj in all_objlist:
-        x_data = np.append(x_data, adjustRectImage(obj.getImagelist()), 0)#怪しい
+        x_data = np.append(x_data, obj.getImagelist(), 0)#怪しい
     x_data = np.delete(x_data,0,0)
     x_data = x_data.reshape((len(x_data), 1, 28, 28))
+    print("x_data"+str(np.shape(x_data)))
+
     t_data = np.zeros((1,1), np.int32)#目標値
     for obj in all_objlist:
-        t_data = np.append(t_data, obj.getId())
+        for i in range(len(obj.getImagelist())):
+            t_data = np.append(t_data, obj.getId())
     t_data = np.delete(t_data,0,0)
+    print("t_data"+str(np.shape(t_data)))
+
     perm = np.random.permutation(len(x_data))
+
+    print("CNN生成開始")
     for epoch in range(n_epoch):
         for i in range(0, len(x_data), batch_size):
             x = Variable(x_data[perm[i:i+batch_size]])
             t = Variable(t_data[perm[i:i+batch_size]])
-            y = model.forward(x)
-            model.zerograds()
-            #loss = F.softmax_cross_entropy(y, t)
-            #acc = F.accuracy(y, t)
+            y = cnn.forward(x)
+            cnn.zerograds()
+            loss = F.softmax_cross_entropy(y, t)
+            acc = F.accuracy(y, t)
             loss.backward()
             optimizer.update()
-
+        print(str(epoch+1)+"epoch目 完了:acc="+str(acc.data))
+#CNNの更新
 def updateCNN(cnn,optimizer,train_img,id):
-    batch_size = 500
+    print("CNN更新開始")
+    batch_size = 1
     n_epoch= 2
-    x_data = np.array(train_img)
-    x_data = x_data.reshape((len(train_img), 1, 28, 28))
-    t_data = numpy.full(len(train_img),id, np.int32)
+    x_data = np.array(train_img,np.float32)
+    print(np.shape(x_data))
+    x_data = x_data.reshape((len(x_data), 1, 28, 28))
+    print(np.shape(x_data))
+    t_data = np.full(len(train_img),id, np.int32)
     perm = np.random.permutation(len(x_data))
     for epoch in range(n_epoch):
         for i in range(0, len(x_data), batch_size):
             x = Variable(x_data[perm[i:i+batch_size]])
             t = Variable(t_data[perm[i:i+batch_size]])
-            y = model.forward(x)
-            model.zerograds()
-            #loss = F.softmax_cross_entropy(y, t)
-            #acc = F.accuracy(y, t)
+            y = cnn.forward(x)
+            cnn.zerograds()
+            loss = F.softmax_cross_entropy(y, t)
+            acc = F.accuracy(y, t)
             loss.backward()
             optimizer.update()
-
+        print(str(epoch+1)+"epoch目 完了:acc="+str(acc.data))
 
 
 if __name__ == "__main__":
@@ -262,11 +295,20 @@ if __name__ == "__main__":
 
         #####キーボード入力#######################
         k = cv2.waitKey(1) # 1msec待つ
-        if k == 13: #enterキーで追加モード
-            adding_mode = "ON"
-            print("adding_mode=ON")
+        if k == 13: #enterキーで追加モード切り替え
+            if adding_mode == "OFF":
+                for obj in now_objlist:#nowobjを全部pastobjにする
+                    past_objlist.append(obj)
+                now_objlist.clear()
+                adding_mode = "ON"
+                print("adding_mode=ON")
+            elif adding_mode == "ON":
+                past_nlobjlist.clear()#nlobjは初期化
+                now_nlobjlist.clear()
+                adding_mode = "OFF"
+                print("adding_mode=OFF")
 
-        if k == ord("g"):#gキーで名前登録
+        if k == ord("g") and adding_mode == "ON":#gキーで名前登録
             naming(frame_no,now_objlist,now_nlobjlist,past_objlist,past_nlobjlist,rect_list)#名前からobject生成
             all_objlist = list()
             all_objlist.extend(now_objlist)
@@ -277,7 +319,8 @@ if __name__ == "__main__":
                 optimizer.setup(cnn)
                 createCNN(cnn,optimizer,all_objlist)
             adding_mode = "OFF"
-
+            now_nlobjlist = list()#初期化
+            past_nlobjlist = list()#初期化
         if k == 27: # ESCキーで終了
             break
 
@@ -302,41 +345,54 @@ if __name__ == "__main__":
         ######Obj#################
         elif adding_mode == "OFF":
             for obj in now_objlist:#すべてのtrackerを更新する
-                success = obj.tracking(frame, frame_no)
+                success = obj.tracking(frame)
                 if success == False:#消失
-                    disapperObj(obj,now_objlist,past_objlist)
+                    disappearObj(obj,now_objlist,past_objlist)
                     updateCNN(cnn,optimizer,obj.getImageTemp(),obj.getId())
+                    obj.saveImageTemp()
                 else:
                     for rect in rect_list:
-                        if nlobj.checkLatestFrame(rect) == True:#一致するrectがあったつまり認識可能
+                        if obj.checkLatestFrame(rect) == True:#一致するrectがあったつまり認識可能
                             rect_list.remove(rect)
                             break
                     else:#一致するrectがない⇒画面端にいるときつまり認識不可能
-                        disappearObj(nlobj,now_nlobjlist,past_nlobjlist)
-                        updateCNN(cnn,optimizer,obj.getImageTemp(),obj.getId())
+                        disappearObj(obj,now_objlist,past_objlist)
+                        if len(past_objlist)+len(now_objlist) > 1: #1個以上objがあったら
+                            updateCNN(cnn,optimizer,obj.getImageTemp(),obj.getId())
+                            obj.saveImageTemp()
+
             if 0 < len(rect_list):#金魚が入ってきた
                 print("金魚出現")
-                if len(past_objlist) == 1:
+                if len(past_objlist)+len(now_objlist) == 0:#ojbがないときに金魚は入ってこない
+                    yet = "二値化エラー"
+                elif (len(past_objlist)+len(now_objlist)) == 1:#金魚が一匹しかおらん時（微妙）
                     tracker = cv2.TrackerKCF_create()
-                    tracker.init(frame, tuple(rect_list[0]))#いっぴくなら一匹と決めつけしているので微妙
-                    past_objlist.remove(past_objlist[0])
+                    tracker.init(frame, tuple(rect_list[0]))#一匹なら一匹と決めつけしているので微妙
                     now_objlist.append(past_objlist[0])
+                    past_objlist.remove(past_objlist[0])
                     obj.addTracker(tracker)
-                for rect in rect_list:
-                    tracker = cv2.TrackerKCF_create()
-                    tracker.init(frame, tuple(rect))
-                    x_data = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
-                    x_data = x_data.reshape(1,1, 28, 28)
-                    x_data = np.array(x_data, np.float32)
-                    #学習
-                    with chainer.using_config('train', False), chainer.using_config('enable_backprop', False):
-                        prolist = loaded_net(x_data)
-                    pro = np.argmax(prolist.array)#予測値
-                    for obj in past_objlist:
-                        if obj == pro:
-                            past_objlist.remove(obj)
-                            now_objlist.append(obj)
-                            obj.addTracker(tracker)
+                else:
+                    for rect in rect_list:
+                        tracker = cv2.TrackerKCF_create()
+                        tracker.init(frame, tuple(rect))
+                        x_data = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
+                        x_data = cv2.resize(x_data, (28,28),0,0 ,cv2.INTER_NEAREST)
+                        x_data = x_data.reshape(1,1, 28, 28)
+                        x_data = np.array(x_data, np.float32)
+                        #学習
+                        with chainer.using_config('train', False), chainer.using_config('enable_backprop', False):
+                            prolist = cnn(x_data)
+                        print("prolist"+str(prolist.data))
+                        max = -10000
+                        maxproID = None
+                        for obj in past_objlist:#past_objlistの中から最も可能性の高いIDを見つける（deleteが入ったときに怪しい）
+                            if max < prolist.data[0][obj.getId()]:
+                                max = prolist.data[0][obj.getId()]
+                                maxproID = obj.getId()
+                        print("PROID:"+str(maxproID))
+                        past_objlist.remove(obj)
+                        now_objlist.append(obj)
+                        obj.addTracker(tracker)
 
 
         ####描画処理#########################
