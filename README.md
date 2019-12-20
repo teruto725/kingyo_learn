@@ -1,104 +1,38 @@
 # 金魚個体識別プログラム
-# 概要
-tracking,CNNを用いて、水槽内に設置されたwebカメラから水槽内の金魚の個体識別を行うプログラムを作成する。
+## 概要
+tracking,CNNを用いて、水槽内に設置されたwebカメラから水槽内の金魚の個体識別を行うプログラムを作成する。  
+本プログラムは最終的にサーバプログラムから呼び出されることを想定しているが現在は暫定的にキーボード操作で各動作を行っている。
 
-# 要求機能
+## デモ
+[https://www.youtube.com/watch?v=42_qHQsF7MA](https://www.youtube.com/watch?v=42_qHQsF7MA)
+
+## 要求機能
 - 金魚に対してユーザが名前を付けることができる  
 
 - webカメラの映像を受け取り、映像内の金魚に対して、名前情報を付与した動画を出力する。  
 
-#  入出力(未実装)
-1. adding_mode():金魚追加モードに移行する
-2. adding_fish(frame_no,name,rect):金魚を追加する
-3. get_latest_frame():最新フレームを取り出す
+## フォルダ構成
+- kingyo.py ソースコード
+- StatementDiagram.drawio 状態遷移図（drawioで書いた）
+- opencv ~~~~ opencvのファイル（うまくインストールできなかった）
+
+## キー入力
+- エンターキー：addingmode 切り替え
+- gキー : 金魚に命名を行う。コンソール上に名前を入力する。画面に一匹だけいる状態で行うこと。
 
 
-
-# 状態遷移（図はstatement diagram.drawio参照）
-
-## Tracking状態(adding_mode="NO")
-
-- trackingを行い追跡物の画像を対象のObjectクラスにaddImageTemp()する。
-
-- 画像データにtrackingによって求められた矩形領域並びに、対応しているobject名を書き込み、ストリーミングを行う。
-
-
-
-## Tracking状態(adding_mode="YES")
-
-- trackingを行い追跡物の画像,フレーム番号、矩形座標を対象のNameLessObjectクラスにaddInfo()する。
-
-
-
-## 新規金魚追加タイミング
-
-- adding_modeフラグを"YES"にする
-## 金魚名付けタイミング(adding_mode="YES")
-
-- 受け取った座標位置、flame番号が合致するNameLessObjectListを探索し、合致するNamelessObjectと受け取ったNameから新しいObjectクラスを生成する
-
-- adding_mode = "DONE"
-
-- 強制的に認識物消失タイミングに遷移
-
-
-
-## 認識物出現タイミング (adding_mode="NO")
-
-- CNNに出現物のデータを投げ、判別されたIDから出現したObjectを特定する。
-
-- trackerを出現物を対象として生成し、そのtrackerと特定したObjectを紐づける。
-
-- trackerによって切り取られた矩形画像を対応したObjectにaddImageTemp()する
-
-
-
-## 認識物出現タイミング (adding_mode="YES")
-
-- 新しいNameLessObjectを生成しそれとTrackerを紐づける
-
-
-
-
-## 認識物消失タイミング (adding_mode="YES")
-
-- 消失したNameLessObjectのTrackerを削除する
-
-
-
-## 認識物消失タイミング（adding_mode="DONE")
-
-- すべてのObjectに対してsaveImageTemp()する
-
-- 現在のCNNを削除し、新しくCNNをObject数に合わせて作成する
-
-- すべてのObjectに対してgetLearnAll()を行い取得したデータでCNNを学習させる
-
-- adding_mode="NO"
-
-
-
-## 認識物消失タイミング(adding_mode="NO")
-
-- 全オブジェクトに対してgetLearnTemp()を行い取得したデータでCNNを学習させる。
-
-- 全オブジェクトに対してsaveImageTemp()を行うことで学習した画像をimagelistに移す
-
-
-
-# 制約
-
-- 初期状態では金魚は水槽内にいないものとする
-
+## 制約
 - 複数同時に新しい金魚を登録することはできない
 
 - 名前付けは1匹ずつで行い必ず異なる金魚に対して行う。（金魚の数と、本プログラム内の金魚の数がずれたら終わり）
 
-- 認識されていない金魚は金魚追加モードがoffの時は0匹,onの時は1匹となっていなければならない
+- 金魚追加モードがoffの時認識されていない金魚は存在してはならない
+
+- 金魚は重なってはいけない
 
 
 
-# クラス
+## クラス
 クラスとそのクラスが持つ主なメンバ変数、メンバ関数について述べる。
 
 ## 1. Objectクラス
@@ -128,55 +62,68 @@ trackerを削除する
 ユーザによって名前が付けられたオブジェクト
 
 ### - 属性
-- tracker : トラッカー
+- tracker : cv2.tracker  
+トラッカー
 
-- id : CNNの目標値となるID
+- id : int  
+CNNの目標値となるID、クラス変数を用いて連番で定義
 
-- name : ユーザによって入力される正解
+- name : str
+  ユーザによって入力される金魚の名前
 
-- imagelist : trackingによって収集された過去の画像群
+- imagelist : list
+trackingによって収集された過去の画像群。cnnを作成するときに使う。
 
-- imagelist_temp : trackingによって収集された出現期間中の画像群
+- imagelist_temp : list
+trackingによって収集された出現期間中の画像群。cnnを更新するときに使う。
 
+- rectlist : list  
+trackingで収集した矩形領域のログ（現状配列の最後の参照しかしていない）
 
 
 ### - ふるまい
 
-- init(NameLessObject,name) : NameLessObjectとnameを受け取ってname,imagelist,を更新する。
-- getLearnTemp() : ImageTempとIDを学習用に成形して渡す
-- getLearnAll()：Imagelistを学習用に成形して渡す
+- init(name,imagelist) : void  
+初期化
 
-- addImageTemp(image) :imagelist_tempに画像を追加する
-
-- saveImageTemp()：imagelist_tempをimagelistに移す
+- tracking(frame): bool  
+Objectクラスのオーバーライド
 
 
+- saveImageTemp()：void  
+imagelist_tempをimagelistに移す
 
-## 2. NameLessObjectクラス
+
+
+## 2. UnknownObjectクラス
 
 ### - 概要
 
-認識が完了していないオブジェクト（各リストはindexを共通させておく）
+名前が付けられる前のobject。addingmode = "OFF"の時のみ生成される。
 
 ### - 属性
 
-- frame_nolist : 画面に入ったときから出るときまでのframe番号
+- frame_nolist : list  
+画面に入ったときから出るときまでのframe番号
 
-- rectlist : 矩形座標リスト
+- rectlist : list  
+矩形座標リスト。frame_nolistと同期
 
-- imagelist: 矩形画像リスト
+- imagelist: list  
+矩形画像リスト。frame_nolistと同期
 
-- tracker : トラッカー
+- tracker : cv2.tracker
+トラッカー
 
 ### - ふるまい
 
-- addInfo(frame_no, rect, image) : それぞれのパラメータを追加する
+- tracking(frame, frame_no) : Objectクラスのオーバーライド
 
-- addTracker(tracker) : トラッカーを追加する
-
-- tracking(frame, frame_no) :
+- check(frame_no, point ) : frame_noのフレームのpoint座標に自信が該当しているかどうか
 <!--stackedit_data:
-eyJoaXN0b3J5IjpbLTU0ODU0MDQ0NCwtMTM4MjU5ODYwNiwtNj
-g0ODIwNTQwLC0xMzI1NDg3NjU4LC04NTE0NTEzMTUsLTE4MDUy
-NjA1NjQsNzMwOTk4MTE2XX0=
+eyJoaXN0b3J5IjpbMTkwNzkyMzA5MCwxMzU4MzYyMDQ4LDE2Nj
+I5OTE0NDcsLTE5NTE3NDA5NzIsLTE2NjQwOTI1MzAsMTYyODEx
+NDE4OCwtNTQ4NTQwNDQ0LC0xMzgyNTk4NjA2LC02ODQ4MjA1ND
+AsLTEzMjU0ODc2NTgsLTg1MTQ1MTMxNSwtMTgwNTI2MDU2NCw3
+MzA5OTgxMTZdfQ==
 -->

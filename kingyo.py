@@ -110,9 +110,9 @@ class CNN(Chain):#出力数を受け取ってcnnを作成する
         super(CNN, self).__init__(
             conv1 = L.Convolution2D(1, 20, 5), # filter 5
             conv2 = L.Convolution2D(20, 50, 5), # filter 5
-            l1 = L.Linear(800, 500),
-            l2 = L.Linear(500, 500),
-            l3 = L.Linear(500, output_num, initialW=np.zeros((output_num, 500), dtype=np.float32))
+            l1 = L.Linear(800, 300),
+            l2 = L.Linear(300, 300),
+            l3 = L.Linear(300, output_num, initialW=np.zeros((output_num, 300), dtype=np.float32))
         )
     def forward(self, x):
         h = F.max_pooling_2d(F.relu(self.conv1(x)), 2)
@@ -240,7 +240,8 @@ def createCNN(cnn,optimizer,all_nobjlist):
             acc = F.accuracy(y, t)
             loss.backward()
             optimizer.update()
-        print(str(epoch+1)+"epoch目 完了:acc="+str(acc.data))
+        print(str(epoch+1)+"epoch目 完了:acc="+str(acc.array)+" loss="+str(loss.array))
+
 #CNNの更新
 def updateCNN(cnn,optimizer,train_img,id):
     print("CNN更新開始")
@@ -262,7 +263,33 @@ def updateCNN(cnn,optimizer,train_img,id):
             acc = F.accuracy(y, t)
             loss.backward()
             optimizer.update()
-        print(str(epoch+1)+"epoch目 完了:acc="+str(acc.data))
+        print(str(epoch+1)+"epoch目 完了:acc="+str(acc.array)+" loss="+str(loss.array))
+
+#nobjが画面上に現れた時の処理
+def appearNobj(nobj,past_nobjlist,now_nobjlist,rect,frame):
+    past_nobjlist.remove(nobj)
+    now_nobjlist.append(nobj)
+    tracker = cv2.TrackerKCF_create()
+    tracker.init(frame, tuple(rect))
+    nobj.setTracker(tracker)
+
+#cnnを用いてID判別
+def recognizeName(x_data,nobjlist):
+    x_data = cv2.resize(x_data, (28,28),0,0 ,cv2.INTER_NEAREST)
+    x_data = x_data.reshape(1,1, 28, 28)
+    x_data = np.array(x_data, np.float32)
+    #認識
+    with chainer.using_config('train', False), chainer.using_config('enable_backprop', False):
+        prolist = cnn(x_data)
+    print("prolist"+str(prolist.data))
+    max = -10000
+    maxproID = None
+    for nobj in past_nobjlist:#past_nobjlistの中から最も可能性の高いIDを見つける（deleteが入ったときに怪しい）
+        if max < prolist.data[0][nobj.getId()]:
+            max = prolist.data[0][nobj.getId()]
+            maxproID = nobj.getId()
+    print("PROID:"+str(maxproID))
+    return maxproID
 
 
 if __name__ == "__main__":
@@ -356,35 +383,18 @@ if __name__ == "__main__":
                 print("金魚出現")
                 if len(past_nobjlist)+len(now_nobjlist) == 0:#ojbがないときに金魚は入ってこない
                     yet = "二値化エラー"
-                elif (len(past_nobjlist)+len(now_nobjlist)) == 1:#金魚が一匹しかおらん時（微妙）
-                    tracker = cv2.TrackerKCF_create()
-                    tracker.init(frame, tuple(rect_list[0]))#一匹なら一匹と決めつけしているので微妙
-                    now_nobjlist.append(past_nobjlist[0])
-                    past_nobjlist.remove(past_nobjlist[0])
-                    nobj.setTracker(tracker)
-                else:
-                    for rect in rect_list:
-                        tracker = cv2.TrackerKCF_create()
-                        tracker.init(frame, tuple(rect))
+                elif (len(past_nobjlist)+len(now_nobjlist)) == 1:#金魚が一匹だけの時
+                    appearNobj(past_nobjlist[0],past_nobjlist,now_nobjlist,rect_list[0],frame)
+                else:#複数金魚がいるときの金魚追加
+                    for rect in rect_list:#元からいた金魚のrectは既に削除されている（同時に出現したらrectlistの大きさが２とかにある
                         x_data = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
-                        x_data = cv2.resize(x_data, (28,28),0,0 ,cv2.INTER_NEAREST)
-                        x_data = x_data.reshape(1,1, 28, 28)
-                        x_data = np.array(x_data, np.float32)
-                        #学習
-                        with chainer.using_config('train', False), chainer.using_config('enable_backprop', False):
-                            prolist = cnn(x_data)
-                        print("prolist"+str(prolist.data))
-                        max = -10000
-                        maxproID = None
-                        for nobj in past_nobjlist:#past_nobjlistの中から最も可能性の高いIDを見つける（deleteが入ったときに怪しい）
-                            if max < prolist.data[0][nobj.getId()]:
-                                max = prolist.data[0][nobj.getId()]
-                                maxproID = nobj.getId()
-                        print("PROID:"+str(maxproID))
-                        past_nobjlist.remove(nobj)
-                        now_nobjlist.append(nobj)
-                        nobj.setTracker(tracker)
-
+                        proid = recognizeName(x_data,past_nobjlist)
+                        for nobj in past_nobjlist:#IDが合致するpast_nobjに対してtrackerの追加、とか諸々
+                            if nobj.getId() == proid:
+                                appearNobj(nobj,past_nobjlist,now_nobjlist,rect,frame)
+                                break
+                        else:
+                            print("ERROR")
 
         ####描画処理#########################
         drawFrame(now_nobjlist,now_uobjlist,color_frame)#認識結果描画
