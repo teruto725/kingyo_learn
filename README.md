@@ -1,15 +1,20 @@
 # 金魚個体識別プログラム
+# 概要
+tracking,CNNを用いて、水槽内に設置されたwebカメラから水槽内の金魚の個体識別を行うプログラムを作成する。
 
+# 要求機能
+- 金魚に対してユーザが名前を付けることができる  
 
-#  入出力
-1. adding_mode():金魚追加モードを移行する
+- webカメラの映像を受け取り、映像内の金魚に対して、名前情報を付与した動画を出力する。  
+
+#  入出力(未実装)
+1. adding_mode():金魚追加モードに移行する
 2. adding_fish(frame_no,name,rect):金魚を追加する
-3. delete_fish(fish_id):対象の金魚情報を削除する
-4. get_latest_frame():最新フレームを取り出す
+3. get_latest_frame():最新フレームを取り出す
 
 
 
-# 状態遷移
+# 状態遷移（図はstatement diagram.drawio参照）
 
 ## Tracking状態(adding_mode="NO")
 
@@ -28,7 +33,7 @@
 ## 新規金魚追加タイミング
 
 - adding_modeフラグを"YES"にする
-##  金魚名付けタイミング(adding_mode="YES")
+## 金魚名付けタイミング(adding_mode="YES")
 
 - 受け取った座標位置、flame番号が合致するNameLessObjectListを探索し、合致するNamelessObjectと受け取ったNameから新しいObjectクラスを生成する
 
@@ -99,26 +104,28 @@
 ## 1. Objectクラス
 
 ### - 概要
-UnknownObjectとNamedObjectの抽象クラス
+UnknownObjectとNamedObject用の抽象クラス
 
 ### - 属性
 
 ### - ふるまい
-- tracking(frame,frame_no) : bool   
-フレーム画像とフレーム番号を受け取ってtrackerを更新、トラッキンできたかどうかを返す。抽象メソッド。
-- setTracker(tracker) : void  
+- tracking(frame,frame_no) : bool  
+フレーム画像とフレーム番号を受け取ってtrackerを更新、トラッキングできたかどうかを返す。抽象メソッド。
+
+- setTracker(tracker) : void   
 trackerをセットする
-- rmTracker() : void
-trackerを削除する
-- checkLatestFrame(rect) : bool
+
+- rmTracker() : void  
+trackerを削除する  
+
+- checkLatestFrame(rect) : bool  
 矩形座標を受け取り、最新の矩形座標と一致するかどうかを返す。
 
 
-
-## 2. Objectクラス
+## 2. NamedObjectクラス
 
 ### - 概要
-UnknownObjectとNamedObjectの抽象クラス
+ユーザによって名前が付けられたオブジェクト
 
 ### - 属性
 - tracker : トラッカー
