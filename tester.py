@@ -22,12 +22,12 @@ while True:
     output_frame = K.learnFrame(frame,frame_no)
     #####キーボード入力#######################
     k = cv2.waitKey(1) # 1msec待つ
-    if k == 13:
+    if k == 13:#エンターキー
         print("名前付け")
         print("Enter new Name:")
         name = input()
         K.nameNewKingyo(name,frame_no)
-    elif k == 80:
+    elif k == 32:#スペースキー
         print("名前の更新")
         print("Enter new Name:")
         name = input()
