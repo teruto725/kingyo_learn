@@ -11,10 +11,8 @@ from chainer import Chain, optimizers, Variable, serializers
 import copy
 from abc import ABCMeta
 from abc import abstractmethod
-import threading
 
 
-######class##################################
 class UnknownObject():
     def __init__(self):
         self.frame_nolist = list()
@@ -68,6 +66,7 @@ class UnknownObject():
             return True
         return False
 
+
 class NamedObject():
     nobj_con = 0#nobjのidカウント用クラス変数
     def __init__(self,name,imagelist):
@@ -106,15 +105,6 @@ class CNN(Chain):#出力数を受け取ってcnnを作成する
         h = self.l3(h)
         return h
 
-
-###グローバル変数#############################################
-learning = False#学習中かどうか
-now_nobjlist = list()#画面内のnobj
-past_nobjlist = list()#画面外のnobj
-now_uobjlist = list()#画面内のuobj
-past_uobjlist = list()#画面外のuobj
-cnn = None #CNN
-
 #フレームを受け取り矩形領域リストを取り出す
 def getRectList(frame):
     f_frame = frame.astype(np.uint8)#int変換
@@ -141,33 +131,23 @@ def getRectList(frame):
     return rect_list
 
 
-
 #frameに認識結果を書き込みframeを返す
 def drawFrame(now_nobjlist,now_uobjlist,frame):
-    global learning
-    if learning:#学習中かどうか
-        cv2.putText(frame," learning", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 0), 2, 8)
-    else:
-        for uobj in now_uobjlist:
-            rect = uobj.rectlist[-1]
-            cv2.putText(frame, str(uobj.getName()), (rect[0], rect[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 0), 2, 8)
-            cv2.rectangle(frame, (rect[0], rect[1]), (rect[0] + rect[2], rect[1] + rect[3]), (0, 100, 0), 2)
+    for uobj in now_uobjlist:
+        rect = uobj.rectlist[-1]
+        cv2.putText(frame, str(uobj.getName()), (rect[0], rect[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 0), 2, 8)
+        cv2.rectangle(frame, (rect[0], rect[1]), (rect[0] + rect[2], rect[1] + rect[3]), (0, 100, 0), 2)
     return frame
-
 
 #新しくできた領域に対しtrackerを設定し、新たなNlnobjを生成#名前が付けられていたら認識し名前を付ける
 def appearUObj(frame,frame_no,now_uobjlist,rect_list,now_nobjlist,past_nobjlist):
-    global learning
     for rect in rect_list:
         tracker = cv2.TrackerKCF_create()
         tracker.init(frame, tuple(rect))
         uobj = UnknownObject()
 
         #名前付け
-        if learning:
-            pass
-            #認識しない
-        elif len(past_nobjlist) == 0:
+        if len(past_nobjlist) == 0:
             uobj.setName("Unknown")
         elif len(past_nobjlist) == 1:#1つしかない時
             uobj.setName(past_nobjlist[0].getName())
@@ -199,10 +179,7 @@ def disappearUObj(uobj,now_uobjlist,past_uobjlist,now_nobjlist,past_nobjlist):
             past_nobjlist.append(nobj)
 
 #初回の学習
-def createCNN(all_nobjlist):
-    global learning
-    learning = True
-    global cnn
+def createCNN(cnn,all_nobjlist):
     cnn = CNN(len(all_nobjlist))
     optimizer = chainer.optimizers.Adam()
     optimizer.setup(cnn)
@@ -237,9 +214,9 @@ def createCNN(all_nobjlist):
             loss.backward()
             optimizer.update()
         print(str(epoch+1)+"epoch目 完了:acc="+str(acc.array)+" loss="+str(loss.array))
-    chainer.serializers.save_npz('kingyo_cnn.net', cnn)
+        chainer.serializers.save_npz('kingyo_cnn.net', cnn)
+    return cnn
 
-    learning = False
 
 
 #cnnを用いてID判別
@@ -263,9 +240,12 @@ def recognizeName(x_data,nobjlist):
     print("PROID:"+str(maxproID))
     return maxproID
 
-#poointとframe_noから金魚を特定しnameを付ける
-
 def naming(point,name,frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobjlist):
+
+    #print("Enter Point:")
+    #point =list(map(int,input().split()))	#point = [x,y]
+    #point = list(map(int,input().split())) #テスト用に座標を固定よってrect_listは引数に不必要
+
     all_uobjlist = list()
     all_uobjlist.extend(now_uobjlist)
     all_uobjlist.extend(past_uobjlist)
@@ -288,12 +268,21 @@ def naming(point,name,frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobj
     else:
         print("座標がずれています。もう一度指定しなおしてください")
         return False
-
     return True
 
-#####モジュール操作用関数#############################################
 
-#フレームを投げると学習結果が返ってくる
+now_nobjlist = list()#画面内のnobj
+past_nobjlist = list()#画面外のnobj
+now_uobjlist = list()#画面内のuobj
+past_uobjlist = list()#画面外のnl
+last_num = 0#前回フレームの金魚数
+frame_no = 0
+
+cnn = None #CNN
+
+rect_list = list()
+
+#フレームが投げられた
 def learnFrame(frame,frame_no):
     print(str(len(now_nobjlist))+str(len(past_nobjlist))+str(len(now_uobjlist))+str(len(past_uobjlist)))
     color_frame = copy.deepcopy(frame)
@@ -319,13 +308,13 @@ def learnFrame(frame,frame_no):
     drawFrame(now_nobjlist,now_uobjlist,color_frame)#認識結果描画
     return color_frame
 
-def nameNewKingyo(name,frame_no,point):
+def nameNewKingyo(name,frame_no):
     global now_nobjlist
     global past_nobjlist
     global now_uobjlist
     global past_uobjlist
     global cnn
-    global learning
+    point = [30,120]
     bool = naming(point,name,frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobjlist)#名前からnobject生成
     if bool == False:
         return False
@@ -333,13 +322,10 @@ def nameNewKingyo(name,frame_no,point):
     all_nobjlist.extend(now_nobjlist)
     all_nobjlist.extend(past_nobjlist)
     if len(all_nobjlist)>=2:
-        learning = True
-        thre = threading.Thread(target=createCNN,args=(all_nobjlist,))#threadingによる並列処理
-        thre.start()
-        #createCNN(all_nobjlist)
+        cnn = createCNN(cnn,all_nobjlist)
         past_uobjlist = list()#初期化
 
-def renameKingyo(name,frame_no,point):#名前とフレーム番号を受け取って金魚を再度名前付けする。既に登録されているnameである必要がある
+def renameKingyo(name,frame_no):#名前とフレーム番号を受け取って金魚を再度名前付けする。既に登録されているnameである必要がある
     #print("Enter Point:")
     #point =list(map(int,input().split()))	#point = [x,y]
     global now_nobjlist
@@ -347,7 +333,8 @@ def renameKingyo(name,frame_no,point):#名前とフレーム番号を受け取�
     global now_uobjlist
     global past_uobjlist
     global cnn
-    global learning
+
+    point = [30,120]
     all_uobjlist = list()
     all_uobjlist.extend(now_uobjlist)
     all_uobjlist.extend(past_uobjlist)
@@ -366,8 +353,5 @@ def renameKingyo(name,frame_no,point):#名前とフレーム番号を受け取�
         if nobj.getName() == name:
             nobj.addImagelist(add_imglist)
     if len(all_nobjlist)>1:
-        learning = True
-        thre = threading.Thread(target=createCNN,args=(all_nobjlist,))
-        thre.start()
-        #createCNN(cnn,all_nobjlist)
+        cnn = createCNN(cnn,all_nobjlist)
         past_uobjlist = list()#初期化

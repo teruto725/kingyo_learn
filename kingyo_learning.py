@@ -12,36 +12,8 @@ import copy
 from abc import ABCMeta
 from abc import abstractmethod
 
-class Object(metaclass = ABCMeta):#抽象クラス
 
-    #抽象メソッド
-    @abstractmethod
-    def tracking(self,frame,frame_no):
-        pass
-
-    #共通メソッド
-    def adjustRectImage(self,image):#画像サイズを変更する
-        try:
-            image = cv2.resize(image, (28,28),0,0 ,cv2.INTER_NEAREST)#28×28領域に調整
-            return True, image.flatten()
-        except:
-            return False, None
-
-    def checkLatestFrame(self,irect):#rectを受け取ってそれに合致しているかどうか
-        point = [irect[0]+(int(irect[2]/2)),irect[1]+(int(irect[3]/2))]
-        rect = self.rectlist[-1]
-        if rect[0]<point[0]<rect[0]+rect[2] and rect[1]<point[1]<rect[1]+rect[3]:
-            return True
-        return False
-
-    def setTracker(self,tracker):#trackerをせっていする
-        self.tracker = tracker
-
-    def rmTracker(self):#trackerを削除する
-        self.tracker = None
-
-
-class UnknownObject(Object):
+class UnknownObject():
     def __init__(self):
         self.frame_nolist = list()
         self.rectlist = list()
@@ -50,6 +22,9 @@ class UnknownObject(Object):
 
     def setName(self,name):
         self.name = name
+
+    def getName(self):
+        return self.name
 
     def tracking(self,frame,frame_no):#フレーム画像とフレーム番号を受け取ってtrackerを更新、認識できたかどうかを返す
         success,rect = self.tracker.update(frame)
@@ -71,7 +46,28 @@ class UnknownObject(Object):
                 return True
         return False
 
-class NamedObject(Object):
+    def setTracker(self,tracker):#trackerをせっていする
+        self.tracker = tracker
+
+    def rmTracker(self):#trackerを削除する
+        self.tracker = None
+
+    def adjustRectImage(self,image):#画像サイズを変更する
+        try:
+            image = cv2.resize(image, (28,28),0,0 ,cv2.INTER_NEAREST)#28×28領域に調整
+            return True, image.flatten()
+        except:
+            return False, None
+
+    def checkLatestFrame(self,irect):#rectを受け取ってそれに合致しているかどうか
+        point = [irect[0]+(int(irect[2]/2)),irect[1]+(int(irect[3]/2))]
+        rect = self.rectlist[-1]
+        if rect[0]<point[0]<rect[0]+rect[2] and rect[1]<point[1]<rect[1]+rect[3]:
+            return True
+        return False
+
+
+class NamedObject():
     nobj_con = 0#nobjのidカウント用クラス変数
     def __init__(self,name,imagelist):
         self.name = name
@@ -79,35 +75,16 @@ class NamedObject(Object):
         self.imagelist = imagelist
         self.id = NamedObject.nobj_con
         NamedObject.nobj_con += 1
-        self.imagelist_temp = list()
-        self.rectlist = list()
+        #self.rectlist = list()
 
-    def tracking(self,frame):#フレーム画像とフレーム番号を受け取ってtrackerを更新、認識できたかどうかを返す
-        success,rect = self.tracker.update(frame)
-
-        if success:
-            rect = np.array(rect,dtype=np.int32)
-            image = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
-            ok,ajimage = self.adjustRectImage(image)
-            if ok:
-                self.imagelist_temp.append(ajimage)
-                self.rectlist.append(rect)
-            return True
-
-        return False
-
-    def saveImageTemp(self):
-        self.imagelist.extend(self.imagelist_temp)
-        self.imagelist_temp.clear()
-
-    def getImageTemp(self):
-        return self.imagelist_temp
     def getImagelist(self):
         return self.imagelist
     def getId(self):
         return self.id
     def getName(self):
         return self.name
+    def addImagelist(self,imglist):
+        self.imagelist.extend(imglist)
 
 
 #CNN
@@ -156,78 +133,56 @@ def getRectList(frame):
 
 #frameに認識結果を書き込みframeを返す
 def drawFrame(now_nobjlist,now_uobjlist,frame):
-    for nobj in now_nobjlist:
-        rect = nobj.rectlist[-1]
-        cv2.putText(frame, str(nobj.name), (rect[0], rect[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 0), 2, 8)
-        cv2.rectangle(frame, (rect[0], rect[1]), (rect[0] + rect[2], rect[1] + rect[3]), (0, 100, 0), 2)
     for uobj in now_uobjlist:
         rect = uobj.rectlist[-1]
-        cv2.putText(frame, str("Unknown"), (rect[0], rect[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 0), 2, 8)
+        cv2.putText(frame, str(uobj.getName()), (rect[0], rect[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 0), 2, 8)
         cv2.rectangle(frame, (rect[0], rect[1]), (rect[0] + rect[2], rect[1] + rect[3]), (0, 100, 0), 2)
     return frame
 
-#新しくできた領域に対しtrackerを設定し、新たなNlnobjを生成
-def appearUObj(frame,frame_no,now_uobjlist,rect_list):
+#新しくできた領域に対しtrackerを設定し、新たなNlnobjを生成#名前が付けられていたら認識し名前を付ける
+def appearUObj(frame,frame_no,now_uobjlist,rect_list,now_nobjlist,past_nobjlist):
     for rect in rect_list:
         tracker = cv2.TrackerKCF_create()
         tracker.init(frame, tuple(rect))
         uobj = UnknownObject()
-        if　len(past_nobjlist) == 0:
-            uobj.setName("Unnamed")
-        elif len(past_nobjlist) == 1:
-            uobj.setName(nobjlist[0].getName()
-        else:
-            recognizeName(rect,past_nobjlist)
-            for nobj in past_nobjlist:
 
+        #名前付け
+        if len(past_nobjlist) == 0:
+            uobj.setName("Unknown")
+        elif len(past_nobjlist) == 1:#1つしかない時
+            uobj.setName(past_nobjlist[0].getName())
+            now_nobjlist.append(past_nobjlist[0])
+            past_nobjlist.remove(past_nobjlist[0])
+        else:
+            x_data = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
+            proid = recognizeName(x_data,past_nobjlist)##NNの予測値
+            for nobj in past_nobjlist:
+                if nobj.getId() == proid:
+                    uobj.setName(nobj.getName())
+                    past_nobjlist.remove(nobj)
+                    now_nobjlist.append(nobj)
+
+        #各パラメータ設定
         uobj.setTracker(tracker)
         uobj.tracking(frame,frame_no)
-
-
-
-
         now_uobjlist.append(uobj)
 
-#nloが画面上から外に出た時の処理
-def disappearUObj(uobj,now_uobjlist,past_uobjlist):
-    print("金魚消失")
+#nlo or unamedが画面上から外に出た時の処理
+def disappearUObj(uobj,now_uobjlist,past_uobjlist,now_nobjlist,past_nobjlist):
     uobj.rmTracker()
     now_uobjlist.remove(uobj)
     past_uobjlist.append(uobj)
-
-def disappearNObj(nobj,now_nobjlist,past_nobjlist):
-    print(nobj.getName()+"消失")
-    nobj.rmTracker()
-    now_nobjlist.remove(nobj)
-    past_nobjlist.append(nobj)
-
-#frame_noとprintから対象のNLOを特定し、nameとともにnobj生成,past_uobjはpast_opjにnowはnowに分類される
-def naming(frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobjlist,rect_list):
-    print("Naming")
-    print("Enter new Name:")
-    name = input()
-
-    #print("Enter Point:")
-    #point =list(map(int,input().split()))	#point = [x,y]
-    point = [rect_list[0][0]+10,rect_list[0][1]+10]#テスト用に座標を固定よってrect_listは引数に不必要
-    all_uobjlist = list()
-    all_uobjlist.extend(now_uobjlist)
-    all_uobjlist.extend(past_uobjlist)
-    print(len(all_uobjlist))
-    for uobj in all_uobjlist:
-        if uobj.check(frame_no-1,point):#frame-1はよくない
-            new_nobj = NamedObject(name,uobj.imagelist)
-            if uobj in now_uobjlist:#new_nobjが現在画面内か、画面外かでappedn先が変わる
-                new_nobj.setTracker(uobj.tracker)
-                now_nobjlist.append(new_nobj)
-            else:
-                past_nobjlist.append(new_nobj)
-            break
-    else:
-        print("座標がずれています。もう一度指定しなおしてください")
+    for nobj in now_nobjlist:
+        if nobj.getName() == uobj.getName():#消滅したのがnobjならそれも消滅扱い
+            print(nobj.getName()+"消失")
+            now_nobjlist.remove(nobj)
+            past_nobjlist.append(nobj)
 
 #初回の学習
-def createCNN(cnn,optimizer,all_nobjlist):
+def createCNN(cnn,all_nobjlist):
+    cnn = CNN(len(all_nobjlist))
+    optimizer = chainer.optimizers.Adam()
+    optimizer.setup(cnn)
     batch_size = 1#バッチサイズ
     n_epoch = 2#エポック数
 
@@ -259,43 +214,19 @@ def createCNN(cnn,optimizer,all_nobjlist):
             loss.backward()
             optimizer.update()
         print(str(epoch+1)+"epoch目 完了:acc="+str(acc.array)+" loss="+str(loss.array))
+    chainer.serializers.save_npz('kingyo_cnn.net', cnn)
+    return cnn
 
-#CNNの更新
-def updateCNN(cnn,optimizer,train_img,id):
-    print("CNN更新開始")
-    batch_size = 1
-    n_epoch= 2
-    x_data = np.array(train_img,np.float32)
-    print(np.shape(x_data))
-    x_data = x_data.reshape((len(x_data), 1, 28, 28))
-    print(np.shape(x_data))
-    t_data = np.full(len(train_img),id, np.int32)
-    perm = np.random.permutation(len(x_data))
-    for epoch in range(n_epoch):
-        for i in range(0, len(x_data), batch_size):
-            x = Variable(x_data[perm[i:i+batch_size]])
-            t = Variable(t_data[perm[i:i+batch_size]])
-            y = cnn.forward(x)
-            cnn.zerograds()
-            loss = F.softmax_cross_entropy(y, t)
-            acc = F.accuracy(y, t)
-            loss.backward()
-            optimizer.update()
-        print(str(epoch+1)+"epoch目 完了:acc="+str(acc.array)+" loss="+str(loss.array))
 
-#nobjが画面上に現れた時の処理
-def appearNobj(nobj,past_nobjlist,now_nobjlist,rect,frame):
-    past_nobjlist.remove(nobj)
-    now_nobjlist.append(nobj)
-    tracker = cv2.TrackerKCF_create()
-    tracker.init(frame, tuple(rect))
-    nobj.setTracker(tracker)
 
 #cnnを用いてID判別
 def recognizeName(x_data,nobjlist):
+    global cnn
+    chainer.serializers.load_npz('kingyo_cnn.net', cnn)#CNNのファイルからの読み込み
     x_data = cv2.resize(x_data, (28,28),0,0 ,cv2.INTER_NEAREST)
     x_data = x_data.reshape(1,1, 28, 28)
     x_data = np.array(x_data, np.float32)
+    print(np.shape(x_data))
     #認識
     with chainer.using_config('train', False), chainer.using_config('enable_backprop', False):
         prolist = cnn(x_data)
@@ -309,165 +240,115 @@ def recognizeName(x_data,nobjlist):
     print("PROID:"+str(maxproID))
     return maxproID
 
+def naming(point,name,frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobjlist):
+
+    #print("Enter Point:")
+    #point =list(map(int,input().split()))	#point = [x,y]
+    #point = list(map(int,input().split())) #テスト用に座標を固定よってrect_listは引数に不必要
+
+    all_uobjlist = list()
+    all_uobjlist.extend(now_uobjlist)
+    all_uobjlist.extend(past_uobjlist)
+    for uobj in all_uobjlist:
+        if uobj.check(frame_no-1,point):#frame-1はよくない
+            new_nobj = NamedObject(name,uobj.imagelist)
+            if uobj in now_uobjlist:#new_nobjが現在画面内か、画面外かでappend先が変わる
+                if uobj.getName() != "Unkonwn":#namedobjが存在していればそれを削除する
+                    for nobj in now_nobjlist:
+                        if nobj.getName() == uobj.getName():
+                            now_nobjlist.remove(nobj)
+                            past_nobjlist.append(nobj)
+                            break
+                print("naming"+str(now_uobjlist))
+                now_nobjlist.append(new_nobj)
+                uobj.setName(name)
+            else:
+                past_nobjlist.append(new_nobj)
+            break
+    else:
+        print("座標がずれています。もう一度指定しなおしてください")
+        return False
+    return True
 
 
 now_nobjlist = list()#画面内のnobj
 past_nobjlist = list()#画面外のnobj
 now_uobjlist = list()#画面内のuobj
 past_uobjlist = list()#画面外のnl
-adding_mode="OFF"
 last_num = 0#前回フレームの金魚数
 frame_no = 0
 
 cnn = None #CNN
-optimizer = None #optimizer
+
+rect_list = list()
 
 #フレームが投げられた
 def learnFrame(frame,frame_no):
+    print(str(len(now_nobjlist))+str(len(past_nobjlist))+str(len(now_uobjlist))+str(len(past_uobjlist)))
     color_frame = copy.deepcopy(frame)
     rect_list = getRectList(frame)#画像内の矩形領域リスト
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)#グレースケール　（後でRGBにすること）
     for uobj in now_uobjlist:
         success = uobj.tracking(frame,frame_no)#trackerを更新
         if success == False:#金魚消滅してたら
-            disappearUObj(uobj,now_uobjlist,past_uobjlist)
+            disappearUObj(uobj,now_uobjlist,past_uobjlist,now_nobjlist,past_nobjlist)
         else:
             for rect in rect_list:#rect_listからtrackerで追跡済みの物を削除
                 if uobj.checkLatestFrame(rect) == True:#一致するrectがあったつまり認識可能
                     rect_list.remove(rect)
                     break
             else:#一致するrectがない⇒画面端にいるときつまり認識不可能
-                disappearUObj(uobj,now_uobjlist,past_uobjlist)
+                disappearUObj(uobj,now_uobjlist,past_uobjlist,now_nobjlist,past_nobjlist)
     if 0 < len(rect_list):#認識されていない金魚がいるとき
         print("金魚出現")
-        appearUObj(frame,frame_no,now_uobjlist,rect_list)#UObj生成
-
-    if 0 < len(rect_list):#金魚が入ってきた
-        print("金魚出現")
-        if len(past_nobjlist)+len(now_nobjlist) == 0:#ojbがないときに金魚は入ってこない
-            yet = "二値化エラー"
-        elif (len(past_nobjlist)+len(now_nobjlist)) == 1:#金魚が一匹だけの時
-            appearNobj(past_nobjlist[0],past_nobjlist,now_nobjlist,rect_list[0],frame)
-        else:#複数金魚がいるときの金魚追加
-            for rect in rect_list:#元からいた金魚のrectは既に削除されている（同時に出現したらrectlistの大きさが２とかにある
-                x_data = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
-                proid = recognizeName(x_data,past_nobjlist)
-                for nobj in past_nobjlist:#IDが合致するpast_nobjに対してtrackerの追加、とか諸々
-                    if nobj.getId() == proid:
-                        appearNobj(nobj,past_nobjlist,now_nobjlist,rect,frame)
-                        break
-                else:
-                    print("ERROR")
-
-
-
+        appearUObj(frame,frame_no,now_uobjlist,rect_list,now_nobjlist,past_nobjlist)#UObj生成
+    drawFrame(now_nobjlist,now_uobjlist,color_frame)#認識結果描画
+    return color_frame
 
 def nameNewKingyo(name,frame_no):
-    naming(frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobjlist,rect_list)#名前からnobject生成
+    global now_nobjlist
+    global past_nobjlist
+    global now_uobjlist
+    global past_uobjlist
+    global cnn
+    point = [30,120]
+    bool = naming(point,name,frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobjlist)#名前からnobject生成
+    if bool == False:
+        return False
     all_nobjlist = list()
     all_nobjlist.extend(now_nobjlist)
     all_nobjlist.extend(past_nobjlist)
-    if len(all_nobjlist)>1:
-        cnn = CNN(len(all_nobjlist))
-        optimizer = chainer.optimizers.Adam()
-        optimizer.setup(cnn)
-        createCNN(cnn,optimizer,all_nobjlist)
-    now_uobjlist = list()#初期化
-    past_uobjlist = list()#初期化
+    if len(all_nobjlist)>=2:
+        cnn = createCNN(cnn,all_nobjlist)
+        past_uobjlist = list()#初期化
 
-def renameKingyo(name,frame_no):
+def renameKingyo(name,frame_no):#名前とフレーム番号を受け取って金魚を再度名前付けする。既に登録されているnameである必要がある
+    #print("Enter Point:")
+    #point =list(map(int,input().split()))	#point = [x,y]
+    global now_nobjlist
+    global past_nobjlist
+    global now_uobjlist
+    global past_uobjlist
+    global cnn
 
-
-        #####キーボード入力#######################
-        k = cv2.waitKey(1) # 1msec待つ
-        if k == 13: #enterキーで追加モード切り替え
-            if adding_mode == "OFF":
-                for nobj in now_nobjlist:#nownobjを全部pastnobjにする
-                    past_nobjlist.append(nobj)
-                now_nobjlist.clear()
-                adding_mode = "ON"
-                print("adding_mode=ON")
-            elif adding_mode == "ON":
-                past_uobjlist.clear()#uobjは初期化
-                now_uobjlist.clear()
-                adding_mode = "OFF"
-                print("adding_mode=OFF")
-
-        if k == ord("g") and adding_mode == "ON":#gキーで名前登録
-            naming(frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobjlist,rect_list)#名前からnobject生成
-            all_nobjlist = list()
-            all_nobjlist.extend(now_nobjlist)
-            all_nobjlist.extend(past_nobjlist)
-            if len(all_nobjlist)>1:
-                cnn = CNN(len(all_nobjlist))
-                optimizer = chainer.optimizers.Adam()
-                optimizer.setup(cnn)
-                createCNN(cnn,optimizer,all_nobjlist)
-            adding_mode = "OFF"
-            now_uobjlist = list()#初期化
-            past_uobjlist = list()#初期化
-        if k == 27: # ESCキーで終了
+    point = [30,120]
+    all_uobjlist = list()
+    all_uobjlist.extend(now_uobjlist)
+    all_uobjlist.extend(past_uobjlist)
+    add_imglist = list()
+    for uobj in all_uobjlist:
+        if uobj.check(frame_no-1,point):#frame-1はよくない
+            add_imglist = uobj.imagelist
             break
-
-        ######UObj################
-        if adding_mode == "ON":
-            for uobj in now_uobjlist:
-                success = uobj.tracking(frame,frame_no)#trackerを更新
-                if success == False:#金魚消滅してたら
-                    disappearUObj(uobj,now_uobjlist,past_uobjlist)
-                else:
-                    for rect in rect_list:#rect_listからtrackerで追跡済みの物を削除
-                        if uobj.checkLatestFrame(rect) == True:#一致するrectがあったつまり認識可能
-                            rect_list.remove(rect)
-                            break
-                    else:#一致するrectがない⇒画面端にいるときつまり認識不可能
-                        disappearUObj(uobj,now_uobjlist,past_uobjlist)
-            if 0 < len(rect_list):#認識されていない金魚がいるとき
-                print("金魚出現")
-                appearUObj(frame,frame_no,now_uobjlist,rect_list)#UObj生成
-
-
-        ######NObj#################
-        elif adding_mode == "OFF":
-            for nobj in now_nobjlist:#すべてのtrackerを更新する
-                success = nobj.tracking(frame)
-                if success == False:#消失
-                    disappearNObj(nobj,now_nobjlist,past_nobjlist)
-                    updateCNN(cnn,optimizer,nobj.getImageTemp(),nobj.getId())
-                    nobj.saveImageTemp()
-                else:
-                    for rect in rect_list:
-                        if nobj.checkLatestFrame(rect) == True:#一致するrectがあったつまり認識可能
-                            rect_list.remove(rect)
-                            break
-                    else:#一致するrectがない⇒画面端にいるときつまり認識不可能
-                        disappearNObj(nobj,now_nobjlist,past_nobjlist)
-                        if len(past_nobjlist)+len(now_nobjlist) > 1: #1個以上nobjがあったら
-                            updateCNN(cnn,optimizer,nobj.getImageTemp(),nobj.getId())
-                            nobj.saveImageTemp()
-
-            if 0 < len(rect_list):#金魚が入ってきた
-                print("金魚出現")
-                if len(past_nobjlist)+len(now_nobjlist) == 0:#ojbがないときに金魚は入ってこない
-                    yet = "二値化エラー"
-                elif (len(past_nobjlist)+len(now_nobjlist)) == 1:#金魚が一匹だけの時
-                    appearNobj(past_nobjlist[0],past_nobjlist,now_nobjlist,rect_list[0],frame)
-                else:#複数金魚がいるときの金魚追加
-                    for rect in rect_list:#元からいた金魚のrectは既に削除されている（同時に出現したらrectlistの大きさが２とかにある
-                        x_data = frame[rect[1]:rect[1]+rect[3],rect[0]:rect[0]+rect[2]]
-                        proid = recognizeName(x_data,past_nobjlist)
-                        for nobj in past_nobjlist:#IDが合致するpast_nobjに対してtrackerの追加、とか諸々
-                            if nobj.getId() == proid:
-                                appearNobj(nobj,past_nobjlist,now_nobjlist,rect,frame)
-                                break
-                        else:
-                            print("ERROR")
-
-        ####描画処理#########################
-        drawFrame(now_nobjlist,now_uobjlist,color_frame)#認識結果描画
-        cv2.imshow('camera capture', color_frame)#表示
-
-
-        frame_no += 1
-    cap.release()
-    cv2.destroyAllWindows()
+    else:
+        print("座標がずれています。もう一度指定しなおしてください")
+        return False
+    all_nobjlist = list()
+    all_nobjlist.extend(now_nobjlist)
+    all_nobjlist.extend(past_nobjlist)
+    for nobj in all_nobjlist:
+        if nobj.getName() == name:
+            nobj.addImagelist(add_imglist)
+    if len(all_nobjlist)>1:
+        cnn = createCNN(cnn,all_nobjlist)
+        past_uobjlist = list()#初期化
