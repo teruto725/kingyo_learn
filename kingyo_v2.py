@@ -15,6 +15,7 @@ import threading
 
 
 ######class##################################
+#名前を付けることができるトラッカー（画面に出てから消えるまでの画像とframenoを持つ
 class UnknownObject():
     def __init__(self):
         self.frame_nolist = list()
@@ -68,6 +69,7 @@ class UnknownObject():
             return True
         return False
 
+#自分の画像と、id,名前を持ってるだけ
 class NamedObject():
     nobj_con = 0#nobjのidカウント用クラス変数
     def __init__(self,name,imagelist):
@@ -141,12 +143,11 @@ def getRectList(frame):
     return rect_list
 
 
-
 #frameに認識結果を書き込みframeを返す
 def drawFrame(now_nobjlist,now_uobjlist,frame):
     global learning
     if learning:#学習中かどうか
-        cv2.putText(frame," learning", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 0), 2, 8)
+        cv2.putText(frame,"Now Learning...", (100,300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 100), 2, 8)
     else:
         for uobj in now_uobjlist:
             rect = uobj.rectlist[-1]
@@ -187,16 +188,17 @@ def appearUObj(frame,frame_no,now_uobjlist,rect_list,now_nobjlist,past_nobjlist)
         uobj.tracking(frame,frame_no)
         now_uobjlist.append(uobj)
 
-#nlo or unamedが画面上から外に出た時の処理
+#unamedが画面上から外に出た時の処理
 def disappearUObj(uobj,now_uobjlist,past_uobjlist,now_nobjlist,past_nobjlist):
     uobj.rmTracker()
     now_uobjlist.remove(uobj)
     past_uobjlist.append(uobj)
     for nobj in now_nobjlist:
         if nobj.getName() == uobj.getName():#消滅したのがnobjならそれも消滅扱い
-            print(nobj.getName()+"消失")
+            #print(nobj.getName()+"消失")
             now_nobjlist.remove(nobj)
             past_nobjlist.append(nobj)
+
 
 #初回の学習
 def createCNN(all_nobjlist):
@@ -279,7 +281,7 @@ def naming(point,name,frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobj
                             now_nobjlist.remove(nobj)
                             past_nobjlist.append(nobj)
                             break
-                print("naming"+str(now_uobjlist))
+                #print("naming"+str(now_uobjlist))
                 now_nobjlist.append(new_nobj)
                 uobj.setName(name)
             else:
@@ -295,7 +297,8 @@ def naming(point,name,frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobj
 
 #フレームを投げると学習結果が返ってくる
 def learnFrame(frame,frame_no):
-    print(str(len(now_nobjlist))+str(len(past_nobjlist))+str(len(now_uobjlist))+str(len(past_uobjlist)))
+
+    #print(str(len(now_nobjlist))+str(len(past_nobjlist))+str(len(now_uobjlist))+str(len(past_uobjlist)))
     color_frame = copy.deepcopy(frame)
     rect_list = getRectList(frame)#画像内の矩形領域リスト
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)#グレースケール　（後でRGBにすること）
@@ -311,7 +314,7 @@ def learnFrame(frame,frame_no):
             else:#一致するrectがない⇒画面端にいるときつまり認識不可能
                 disappearUObj(uobj,now_uobjlist,past_uobjlist,now_nobjlist,past_nobjlist)
     if 0 < len(rect_list):#認識されていない金魚がいるとき
-        print("金魚出現")
+        #print("金魚出現")
         appearUObj(frame,frame_no,now_uobjlist,rect_list,now_nobjlist,past_nobjlist)#UObj生成
 
 
@@ -326,6 +329,8 @@ def nameNewKingyo(name,frame_no,point):
     global past_uobjlist
     global cnn
     global learning
+    if learning:
+        return False
     bool = naming(point,name,frame_no,now_nobjlist,now_uobjlist,past_nobjlist,past_uobjlist)#名前からnobject生成
     if bool == False:
         return False
@@ -338,6 +343,7 @@ def nameNewKingyo(name,frame_no,point):
         thre.start()
         #createCNN(all_nobjlist)
         past_uobjlist = list()#初期化
+    return True
 
 def renameKingyo(name,frame_no,point):#名前とフレーム番号を受け取って金魚を再度名前付けする。既に登録されているnameである必要がある
     #print("Enter Point:")
@@ -348,6 +354,8 @@ def renameKingyo(name,frame_no,point):#名前とフレーム番号を受け取�
     global past_uobjlist
     global cnn
     global learning
+    if learning:
+        return False
     all_uobjlist = list()
     all_uobjlist.extend(now_uobjlist)
     all_uobjlist.extend(past_uobjlist)
@@ -371,3 +379,4 @@ def renameKingyo(name,frame_no,point):#名前とフレーム番号を受け取�
         thre.start()
         #createCNN(cnn,all_nobjlist)
         past_uobjlist = list()#初期化
+    return True
