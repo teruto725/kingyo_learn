@@ -6,6 +6,12 @@ CNNによって金魚の個体認識を行うpythonモジュールを作成し�
 https://www.youtube.com/watch?v=OMtZ7q4T6pw&t=6s  
 https://www.youtube.com/watch?v=4what_o0AHA
 
+## バージョン
+python 3.7.1  
+chainer==6.5.0  
+scikit-learn==0.20.2  
+numpy==1.18.1  
+opencv-contrib-python==4.1.2.30  
 
 ## ファイル構成
 - kingyo_v2.py:個体認識モジュール
