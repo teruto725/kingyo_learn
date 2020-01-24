@@ -2,6 +2,9 @@
 ## 概要
 CNNによって金魚の個体認識を行うpythonモジュールを作成した。  
 複数回名前を付けることで精度向上を行うことができる。
+金魚以外でも動く。  
+https://www.youtube.com/watch?v=OMtZ7q4T6pw&t=6s  
+https://www.youtube.com/watch?v=4what_o0AHA
 
 
 ## ファイル構成
